@@ -69,8 +69,9 @@ while( <> )
 }
         if($readorexecute > 1 )
         {
-#                print("Pay: $payload");
-                 &FileExecuterPost($get_file,$payload);
+#               print("Pay: $payload");
+                &FileExecuterPost($get_file,$payload);
+		exit;
         }
 
 
