@@ -2,13 +2,17 @@
 BEGIN { $| = 1; 
 require File::Copy;
 $readorexecute = 0;
-$baseaddress = "/home/tarokkk/unixhf";
+$baseaddress = "/var/www";
 $get_file = "";
 $payload = "";
 $header_end = 0;
+%settings;
 #DEBUG
 #open(FILEWRITE, "> /home/tarokkk/unixhf/http_dump");
 }
+%settings=&LoadSettings("/home/tarokkk/unixhf/httpserver.cfg");
+$baseaddress = $settings{'DocumentRoot'};
+chomp($baseaddress);
 while( <> )
 {
 	#DEBUG
@@ -176,3 +180,21 @@ print("Content-type: ");
 system("bash -c \"/usr/bin/file -bi $get_file\"");
 #exec("/usr/bin/file -bi $get_file");
 }
+
+#Load config file
+sub LoadSettings{
+my($cfgfile) = @_;
+open(SETTINGS, "<$cfgfile");
+my (%settings);
+while(<SETTINGS>)
+{
+	/^\#/ && do { next;};
+	/^[a-zA-Z]/ && do {
+		my(@parsed) = split(/ /,$_);
+		$settings{$parsed[0]}=$parsed[1];
+	};
+}
+close(SETTINGS);
+return %settings;
+}
+
