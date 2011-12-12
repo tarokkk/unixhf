@@ -4,7 +4,8 @@ require File::Copy;
 $readorexecute = 0;
 $baseaddress = "/home/tarokkk/unixhf";
 $get_file = "";
-$payload = 0;
+$payload = "";
+$header_end = 0;
 #DEBUG
 #open(FILEWRITE, "> /home/tarokkk/unixhf/http_dump");
 }
@@ -46,21 +47,31 @@ while( <> )
 		$ENV{"CONTENT_LENGTH"}=$data[1];
 	};
 	/^[^a-zA-Z]/ && do {
-		if( $readorexecute == 1){
+		if( $readorexecute == 2)
+		{
+			$header_end=1;
+			next;
+		}
+		elsif( $readorexecute == 1){
 			&FileExecuter($get_file);
 			last;
-		}
-		elsif( $readorexecute == 2){
-			#TODO exec cgi and keep printing stdin to out...
-			&FileExecuterPost($get_file);
-			last;
-		}
+		}		
 		else{
 			&FileReader($get_file);
 			last;
 		}
 	};
+	if( $readorexecute == 2 and $header_end==1)
+	{
+		$payload .= $_;
+		last;
+	}
 }
+        if($readorexecute > 1 )
+        {
+#                print("Pay: $payload");
+                 &FileExecuterPost($get_file,$payload);
+        }
 
 
 #Functions
@@ -82,32 +93,32 @@ else
 
 #Executing file POST
 sub FileExecuterPost{
-$| = 1;
-my ($path) = @_;
+my ($path, $line) = @_;
+#print("$path and $line");
 if( -e $path ){
 #	open(FILEWRITE2, "> /home/tarokkk/unixhf/http_dump_sub");
 	&HTTP_HEAD_OK;
-	
 	$pid = open(WRITEME, "|-");
 	if( $pid != 0)
 	{
-		my($line) = <STDIN>;
+#		print("Beléptem a szülői ágba! $line\n");
 		#DEBUG
 #		print FILEWRITE2 "$line";
-		print WRITEME "$line\r\n";
-		print WRITEME "\r\n";
-		print"close pipe mofo\n";
-		close WRITEME or die "can't close STDOUT: $!\n";
-		print("pipe closed\n");
+		print WRITEME "$line";
+#		print("Adat beírva!");
+#		print WRITEME "\r\n";
+#		print"close pipe mofo\n";
+		close WRITEME or die "can't close PIPE: $!\n";
+#		print("pipe closed\n");
 		exit;
-		print("program closed\n");
+#		print("program closed\n");
 	}	
 	else
 	{
 		$| = 1;
-		print("exec\n");
+	#	print("exec\n");
 		exec($path);
-		print("die already\n");
+	#	print("die already\n");
 		exit;
 	}
 }
