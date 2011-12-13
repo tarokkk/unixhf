@@ -13,6 +13,7 @@ $header_end = 0;
 %settings=&LoadSettings($ARGV[0]);
 $baseaddress = $settings{'DocumentRoot'};
 chomp($baseaddress);
+#print($ENV{"TCPREMOTEIP"});
 while( <STDIN> )
 {
     #DEBUG
