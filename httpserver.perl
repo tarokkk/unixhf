@@ -10,6 +10,11 @@ $| = 1;
 select($old_fh);
 
 #Determines wheater read/execute a file
+#
+# 0 - Read
+# 1 - GET
+# 2 - POST
+#
 $readorexecute = 0;
 #
 #Variable for the full route for the queried file
@@ -96,12 +101,12 @@ while( <STDIN> )
 	    my($params);
 	    read(STDIN, $params, $ENV{'CONTENT_LENGTH'});
 	    #Execute Script passing parameters
-	    &FileExecuterPost($get_file,$params);
+	    &FileExecuter($get_file,$params);
 	    last;
         }
 	#Execute GET CGI
         elsif( $readorexecute == 1){
-            &FileExecuter($get_file);
+            &FileExecuter($get_file,"");
             last;
         }		
 	#Read file
@@ -115,41 +120,24 @@ while( <STDIN> )
 
 
 #Functions
-
+#
 #Executing file
 sub FileExecuter{
-    my ($path) = @_;
-    if( -e $path )
-    {
-        &HTTP_HEAD_OK;
-	#Exec script - exit program
-	$pid=open3(\*CHILD_IN,\*CHILD_OUT,\*CHILD_ERR,"$path");
-	while(<CHILD_OUT>)
-	{
-	    print($_);
-	}
-	waitpid($pid, 0);
-	close(CHILD_IN);
-	close(CHILD_OUT);
-	close(CHIL_ERR);
-	exit;
-    }
-    else
-    {
-        &HTTP_ERR_HEAD;
-    } 
-}
-
-#Executing file POST
-sub FileExecuterPost{
     my ($path,$params) = @_;
     if( -e $path )                                                                             
     {   
+	#HTTP 200
         &HTTP_HEAD_OK;
-        #Exec script - exit program
+	#
+        #Fork and Exec with I/O pipe
         $pid=open3(\*CHILD_IN,\*CHILD_OUT,\*CHILD_ERR,"$path");
-        print CHILD_IN "$params";
+	#On POST copy data to CHILD_STDIN
+        if( $readorexecute > "1" )
+	{
+	     print CHILD_IN "$params";
+	}
 	close(CHILD_IN);
+	#Forward the CGIs output
         while(<CHILD_OUT>)                                                                     
         {   
             print($_);                                                                         
@@ -162,7 +150,7 @@ sub FileExecuterPost{
     }
     else                                                                                       
     {   
-        &HTTP_ERR_HEAD;                                                                        
+        &HTTP_ERROR_404;                                                                        
     } 
 }
 
@@ -179,7 +167,7 @@ sub FileReader{
         &HTTP_CONTENT_T($path);
         #Header end
         print("\r\n");
-        #Copy func to push data on stdout
+        #Copy function to push data on stdout
         copy($path,\*STDOUT);
         close(FILE);
     }
@@ -192,7 +180,15 @@ sub FileReader{
 #
 #HTTP 200
 sub HTTP_HEAD_OK{
-    print("HTTP/1.1 200 OK\r\n");
+    print("HTTP/1.1 200 OK\n");
+    &HTTP_SERVER_H;
+}
+#
+#HTTP_SERVER_H
+    sub HTTP_SERVER_H{
+    print("Date: ");
+    system("date");
+    print("Server: Perl Test Server (TFDAZ6)\n");
 }
 #
 #HTTP 404
@@ -215,6 +211,7 @@ sub HTTP_ERROR_404{
 	&HTTP_ERR_HEAD;
         &HTTP_ERR_BODY;
     }
+    exit;
 }
 sub HTTP_ERR_HEAD{
     print("HTTP/1.1 404 FILE NOT FOUND\r\n");
@@ -249,20 +246,30 @@ sub LoadSettings{
     close(SETTINGS);
     return %settings;
 }
-
+#
+#Search for the index page in a folder (list can be edited in config file)
 sub GetFolderIndex{
     my($path)=@_;
     my($indexed) = "";
+    #Check for the / at the end of the path
     if( $path =~ m/\/$/ )
     {
-	$indexed = $baseaddress.$path."index.html";
+	$indexed = $baseaddress.$path;
     }
     else
     {
-	$indexed = $baseaddress.$path."/index.html";
+	$indexed = $baseaddress.$path."/";
     }
     chomp($indexed);
-    return $indexed;
-
+    foreach(@Index_Files)
+    {
+        my($temp) = $_;
+	chomp($temp);
+	if( -f $indexed.$temp)
+	{
+	    return $indexed.$temp;
+	}
+    }
+    &HTTP_ERROR_404;
 }
 
