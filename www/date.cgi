@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
 # hello.pl -- my first perl script!
+$date = `date`;
 
 print "Content-type: text/html\n\n";
 
@@ -12,7 +13,7 @@ print <<"EOF";
 </HEAD>
 
 <BODY>
-<H1>Hello, world!</H1>
+<H1>Hello, world! - $date</H1>
 </BODY>
 
 </HTML>
