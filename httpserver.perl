@@ -94,9 +94,17 @@ while( <STDIN> )
     };
     #POST method for CGI
     /^POST/ && do {
-        $get_file = $baseaddress . $data[1];
-        $ENV{"REQUEST_METHOD"} = 'POST';
-        $readorexecute = 2;
+	if($Enable_Cgi eq "1")
+	{
+            $get_file = $baseaddress . $data[1];
+            $ENV{"REQUEST_METHOD"} = 'POST';
+            $readorexecute = 2;
+	}
+        else
+        {
+            #If not Directory/Executable it's a sample html or txt
+            $get_file = $baseaddress . $data[1];
+        }
     };
     #Set the Content-Length
     /^Content-Length:/ && do {
@@ -274,7 +282,6 @@ sub GetFolderIndex{
     }
     chomp($indexed);
     foreach(@Index_Files)
-    print $_;
     {
         my($temp) = $_;
 	chomp($temp);
