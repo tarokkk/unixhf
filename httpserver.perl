@@ -9,7 +9,7 @@ $old_fh = select(STDIN);
 $| = 1;
 select($old_fh);
 
-#Determines wheater read/execute a file
+#Determines wheater read/execute the request
 #
 # 0 - Read
 # 1 - GET
@@ -35,9 +35,19 @@ $baseaddress = $settings{'DocumentRoot'};
 chomp($baseaddress);
 
 $Default_Error_Page=$settings{'DefaultErrorPage'};
+chomp($Default_Error_Page);
 $Enable_Cgi=$settings{'EnableCgi'};
+chomp($Enable_Cgi);
 @Index_Files=split(/,/ , $settings{'IndexFiles'} );
-$LogFile=$settings{'LogFile'};  
+$Log_File=$settings{'LogFile'};  
+chomp($Log_File);
+
+#
+#Logging
+$LOGLINE = "";
+my($logpath) = $Log_File."/"."ErrorLog.log";
+chomp($logpath);
+open(ERROR_LOG, ">>", "$logpath") or die("Invalid Path for LogFile: $Log_File");
 
 while( <STDIN> )
 {
@@ -47,6 +57,8 @@ while( <STDIN> )
     @data = split(/ /, $_);
     #Parsing the input
     /^GET/ && do {
+	
+	$LOGLINE = $data[0]." ".$data[1];
 	#Temorary created route
         my($testing_path) = $baseaddress . $data[1];
 	chomp($testing_path);
@@ -61,7 +73,7 @@ while( <STDIN> )
 	    $get_file = &GetFolderIndex($data[1]);
 	}
 	#Check for executable
-        elsif( $data[1] =~ m/\.cgi/ )
+        elsif( $data[1] =~ m/\.cgi/ and ($Enable_Cgi eq "1") )
         {
 	    #Check for GET paramaters
             my(@parsed_get) = split(/\?/, $data[1]);
@@ -115,10 +127,7 @@ while( <STDIN> )
             last;
         }
     };
-    #Get POST Params
 }
-
-
 #Functions
 #
 #Executing file
@@ -146,11 +155,11 @@ sub FileExecuter{
         close(CHILD_OUT);                                                                      
         close(CHILD_ERR);
 	close(STDIN);
-	exit;                                                                                 
+	&safe_exit;                                                                                 
     }
     else                                                                                       
     {   
-        &HTTP_ERROR_404;                                                                        
+        &HTTP_ERROR_404($path);                                                                        
     } 
 }
 
@@ -173,9 +182,9 @@ sub FileReader{
     }
     else
     {
-        &HTTP_ERROR_404;
+        &HTTP_ERROR_404($path);
     }
-    exit;
+    &safe_exit;
 }
 #
 #HTTP 200
@@ -188,11 +197,13 @@ sub HTTP_HEAD_OK{
     sub HTTP_SERVER_H{
     print("Date: ");
     system("date");
-    print("Server: Perl Test Server (TFDAZ6)\n");
+    print("Server: Perl Test Server (TFDAZ6)\r\n");
 }
 #
 #HTTP 404
 sub HTTP_ERROR_404{
+    my( $path) = @_;
+    &ErrorLog("404 Not Found");
     my ($exist) = 1;
     my ($path) = $baseaddress . "/" . $Default_Error_Page;
     chomp($path);
@@ -211,10 +222,11 @@ sub HTTP_ERROR_404{
 	&HTTP_ERR_HEAD;
         &HTTP_ERR_BODY;
     }
-    exit;
+    &safe_exit;
 }
 sub HTTP_ERR_HEAD{
     print("HTTP/1.1 404 FILE NOT FOUND\r\n");
+    &HTTP_SERVER_H;
 }
 sub HTTP_ERR_BODY{
     print("Content-type: text/plain; charset=UTF-8\r\n");
@@ -272,4 +284,18 @@ sub GetFolderIndex{
     }
     &HTTP_ERROR_404;
 }
-
+sub safe_exit{
+    close(ERROR_LOG);
+    exit;
+}
+sub AccesLog()
+{
+}
+sub ErrorLog()
+{
+    my($msg)=@_;
+    $date = `date`;
+    chomp($date);
+    chomp($LOGLINE);
+    print ERROR_LOG "[$date] ERROR: $msg | $LOGLINE\n";
+}
