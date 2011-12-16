@@ -51,8 +51,8 @@ open(ERROR_LOG, ">>", "$logpath") or die("Invalid Path for LogFile: $Log_File");
 
 while( <STDIN> )
 {
-    #DEBUG
-#	print FILEWRITE "$_";
+    #Get '../' pattern out of the line! Preventing from ../../../etc/passwd etc...
+    s/\.\.\//\//g;
     #Split lines at spaces
     @data = split(/ /, $_);
     #Parsing the input
@@ -274,6 +274,7 @@ sub GetFolderIndex{
     }
     chomp($indexed);
     foreach(@Index_Files)
+    print $_;
     {
         my($temp) = $_;
 	chomp($temp);
