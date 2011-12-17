@@ -1,0 +1,101 @@
+.TH httpserver.perl 8 "17 December 2011"
+.SH NAME
+httpserver.perl - minimalist HTTP server written in perl.
+
+httpstandalone.perl - small inetd like daemon for httpserver.perl
+.SH SYNOPSIS
+.B httpserver.perl
+[
+.IR config_file
+]
+
+.B httpstandalone.perl
+.RB [ -h
+.IR host ]
+.RB [ -p
+.IR port ]
+.RB [ -s
+.IR http_parser ]
+.RB [ -c
+.IR parser_parameter ]
+.SH DESCRIPTION
+.PP
+.I httpserver.perl
+is a small HTTP server.
+It is recommended only for private use.
+It implements all the basic features of an HTTP server, including:
+.TP 3
+*
+GET, HEAD, and POST methods.
+.TP 3
+*
+CGI.
+.TP 3
+*
+Security against ".." filename snooping.
+.TP 3
+*
+Change index file name.
+.TP 3
+*
+Standard logging.
+.TP 3
+*
+Custom error pages.
+.PP
+This application was written for educational purposes. 
+You can use it with inetd server or with httpstandalone.perl. 
+
+.SH OPTIONS
+.TP
+.B config_file
+Specifies a config-file to httpserver.perl for reading additional options.
+.TP
+.B -h
+Specifies the host to listen on. Default is 127.0.0.1.
+.TP
+.B -p
+Specifies a port number to listen on. Default is 80
+.TP
+.B -s
+Specifies the path for the HTTP parser. 
+This must be a static route for httpserver.perl.
+.TP
+.B -c
+Specifies the starting pramater for the parser. 
+When you use httpserver.perl this must be the configuration file.
+
+.SH CONFIGURATION FILE
+
+In the configuration file you can set the following parameters.
+The Option and the Value must be separated with space.
+For example: "DefaultErrorPage default". You can use # for comments.
+Note that only full rows can be commented. You can not user # after an option.
+.TP
+.B DocumentRoot
+Specifies the root directory for the webserver. For example /var/www.
+.TP
+.B DefaultErrorPage
+Specifies the route for custom 404 error page. 
+If you leave "default" the server will use the built in 404 message.
+.TP
+.B EnableCgi
+Enable/Dissable the executions of cgi scripts. Only perl scripts tested.
+You can disable by setting the value 0 and enbable by setting it 1.
+.TP
+.B IndexFiles
+List of index files separated by comma. 
+For example: "IndexFiles index.html,index.htm,index.cgi".
+If no webpage specified in the query the server will search for these files.
+.TP
+.B LogFile
+Specifies the route for log file.
+For example: "LogFile /var/log"
+
+.SH USING WITH INETD
+
+You can use this webserver with inetd. This is an example configuration for inetd:
+www stream tcp nowait user:group /usr/bin/httpserver.perl httpserver /home/user/httpserver.cfg
+
+.SH AUTHOR
+Copyright \[co] 2011 by Guba Sandor <gubasanyi\[at]gmail.com>. All rights reserved.

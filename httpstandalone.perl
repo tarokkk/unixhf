@@ -15,18 +15,47 @@ getopt('psch');
 
 #
 #Validate options
-if( $opt_p > 0 && $opt_p < 65536 )
+if( defined($opt_h) )
 {
-    $port = $opt_p;
+    $host=$opt_h;
 }
 else
 {
-    print("Wrong port number: $opt_p\n");
+    $host="127.0.0.1";
+}
+if( defined($opt_p) )
+{
+    if( $opt_p > 0 && $opt_p < 65536 )
+    {
+	$port = $opt_p;
+    }
+    else
+    {
+    	print("Wrong port number: $opt_p\n");
+	exit;
+    }
+}
+else
+{
+    $port="80";
+}
+if( defined($opt_s) )
+{
+    $server = $opt_s;
+}
+else
+{
+    print("No HTTP parser defined.");
     exit;
 }
-$server = $opt_s;
-$params = $opt_c;
-$host = $opt_h;
+if( defined($opt_c) )
+{
+    $params = $opt_c;
+}
+else
+{
+    $params = "";
+}
 #
 #Server Start LOG
 print("HTTP Daemon Started at ");

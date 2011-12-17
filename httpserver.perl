@@ -72,11 +72,19 @@ while( <STDIN> )
 	if( $data[1] eq "/")
 	{
 	    $get_file=&GetFolderIndex($data[1]);
+	    if( $get_file =~ m/\.cgi/  and $Enable_Cgi eq "1" )
+	    {
+		$readorexecute = 1;
+	    }
 	}
 	#Check for directory
 	elsif( -d $testing_path )
 	{
 	    $get_file = &GetFolderIndex($data[1]);
+            if( $get_file =~ m/\.cgi/  and $Enable_Cgi eq "1" )
+            {
+                $readorexecute = 1;
+            }
 	}
 	#Check for executable
         elsif( $data[1] =~ m/\.cgi/ and ($Enable_Cgi eq "1") )
