@@ -56,10 +56,16 @@ while( <STDIN> )
     #Split lines at spaces
     @data = split(/ /, $_);
     #Parsing the input
+    /^HEAD/ && do {
+	$get_file = $baseaddress . $data[1];
+	chomp($get_file);
+	&HTTP_HEAD($get_file);
+	last;
+    };
     /^GET/ && do {
 	
 	$LOGLINE = $data[0]." ".$data[1];
-	#Temorary created route
+	#Temporary created route
         my($testing_path) = $baseaddress . $data[1];
 	chomp($testing_path);
 	#Check if root folder
@@ -136,7 +142,29 @@ while( <STDIN> )
         }
     };
 }
+#
 #Functions
+#
+#HTTP HEAD
+sub HTTP_HEAD{
+my ($path) = @_;
+if( -e $path )
+{
+    #HTTP_OK
+    &HTTP_HEAD_OK;
+    #HTTP_SERVER_HEAD
+    &HTTP_SERVER_H;
+    #Content-type:
+    &HTTP_CONTENT_T($path);
+    #Header end
+    print("\r\n");
+}
+else{
+    &HTTP_ERROR_404($path);
+}
+
+}
+
 #
 #Executing file
 sub FileExecuter{
@@ -179,7 +207,9 @@ sub FileReader{
     if( $exist > 0)
     {
         #HTTP_OK
-        &HTTP_HEAD_OK
+        &HTTP_HEAD_OK;
+	#HTTP_SERVER_HEAD
+	&HTTP_SERVER_H;
         #Content-type:
         &HTTP_CONTENT_T($path);
         #Header end
