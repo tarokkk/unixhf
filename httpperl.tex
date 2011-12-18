@@ -1,0 +1,461 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[magyar]{babel}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{textcomp}
+\definecolor{listinggray}{gray}{0.9}
+\definecolor{lbcolor}{rgb}{0.9,0.9,0.9}
+\lstset{
+	%backgroundcolor=\color{lbcolor},
+	tabsize=4,
+	rulecolor=,
+	language=perl,
+        basicstyle=\scriptsize,
+        upquote=true,
+        aboveskip={1.5\baselineskip},
+        columns=fixed,
+        showstringspaces=false,
+        extendedchars=true,
+        breaklines=true,
+        prebreak = \raisebox{0ex}[0ex][0ex]{\ensuremath{\hookleftarrow}},
+        showtabs=false,
+        showspaces=false,
+        showstringspaces=false,
+        identifierstyle=\ttfamily,
+        keywordstyle=\color[rgb]{0,0,1},
+        commentstyle=\color[rgb]{0.133,0.545,0.133},
+        stringstyle=\color[rgb]{0.627,0.126,0.941},
+}
+
+\title{UNIX rendszer felhasználói és fejlesztői felülete\\
+HTTP szerver Perl nyelven}
+\author{Guba Sándor}
+\date{\today}
+\begin{document}
+\maketitle
+\newpage
+\section{Részletes specifikáció}
+A szkript alkalmas az egyszerűbb HTTP (Hypertext Transfer Protocol) kérések feldolgozására. Képes feldolgozni a GET, POST és HEAD kéréseket. Védelmet nyujt a root könyvtárból való kitörés ellen mint a "http://host/../../etc/passwd". Alkalmas perl CGI szkriptek futtatására. Logolja a hibás kimenetelű lekérdezéseket (404 Not Found). A beállítások egyszerűen változtathatóak a konfigurációs fájlban. A konfigurációban állítható a root könyvtár (DocumentRoot), a cgi (EnableCgi) futtatás engedélyezése, index fájlok nevei (IndexFiles), a logolás (LogFile) helye valamint egyedi 404 oldal (DefaultErrorPage). A program használható inetd szerver segítségével vagy a mellékelt httpstandalone.perl program segítségével.
+
+\section{Működési vázlat}
+Elindításkor a program inicializálja a változókat, valamint betölti a konfigurációs állományt. Ha ez sikertelen hibával megáll. A program a standard inputon várakozik bemenetre. A bemenetet soronként dolgozza fel. Ha egy bemenetre illeszkedik egy reguláris kifejezés pl.: /\^{}GET/ akkor az ehhez tartozó utasításokat végrehajtja. A fejléc mező végén /\^{}\textbackslash r/ elkezdi a kérés tényleges feldolgozását. Felépítjük a HTTP szabványnak megfelelő fejléc részt amit a standard kimenetre írunk. A megfelelő fájl tartalmát a standard kimenetre írjuk, vagy futtatjuk. Amennyiben egy fájl nem elérhető úgy hibakódot adunk vissza. A programot használhatjuk inetd szerverrel valamint a mellékelt httpstandalone.perl programmal is. Utóbbi tulajdonképpen az inetd feladatait látja el. Indításkor a megfelelő paramétereket feldolgozza és a megadott porton hallgat. Új kapcsolat esetén fork() segítségével új példányt hozunk létre. Az open3() függvény segítségével elindítjuk a megadott http feldolgozót. Ezt követően a hálózati bemenetet a parser bemenetére irányítjuk, valamint a parser kimenetét a hálózati adatfolyamba. A gyerek program ezt követően megáll.
+\section{Belső szerkezet}
+
+\paragraph{Inicializáció} A program elején inicializáljuk a változókat, feldolgozzuk a konfigurációs fájlt.
+\begin{lstlisting}
+#!/usr/bin/perl 
+use File::Copy;
+use IPC::Open3;
+#Disable Buffering!
+my $old_fh = select(STDOUT);
+$| = 1;
+select($old_fh);
+$old_fh = select(STDIN);
+$| = 1;
+select($old_fh);
+
+#Determines wheater read/execute the request
+#
+# 0 - Read
+# 1 - GET
+# 2 - POST
+#
+$readorexecute = 0;
+#
+#Variable for the full route for the queried file
+$get_file = "";
+#
+#Indicates the end of the HEADER part
+$payload = 0;
+#
+#Associative array for settings
+%settings;
+
+#
+#Load setting from file (First command line parameter)
+%settings=&LoadSettings($ARGV[0]);
+#
+#Setting up variables listed in configuration file
+$baseaddress = $settings{'DocumentRoot'};
+chomp($baseaddress);
+
+$Default_Error_Page=$settings{'DefaultErrorPage'};
+chomp($Default_Error_Page);
+$Enable_Cgi=$settings{'EnableCgi'};
+chomp($Enable_Cgi);
+@Index_Files=split(/,/ , $settings{'IndexFiles'} );
+$Log_File=$settings{'LogFile'};  
+chomp($Log_File);
+
+#
+#Logging
+$LOGLINE = "";
+my($logpath) = $Log_File."/"."ErrorLog.log";
+chomp($logpath);
+open(ERROR_LOG, ">>", "$logpath") or die("Invalid Path for LogFile: $Log_File");
+\end{lstlisting}
+\paragraph{Fő ciklus} Itt történik a standard bementről való olvasás és értelmezés. A  különböző sorok különböző reguláris kifejezésre illeszkednek és bneállítják a hozzájuk tartozó változókat.
+
+\begin{lstlisting}
+while( <STDIN> )
+{
+    #Get '../' pattern out of the line! Preventing from ../../../etc/passwd etc...
+    s/\.\.\//\//g;
+    #Split lines at spaces
+    @data = split(/ /, $_);
+    #Parsing the input
+    /^HEAD/ && do {
+	$get_file = $baseaddress . $data[1];
+	chomp($get_file);
+	&HTTP_HEAD($get_file);
+	last;
+    };
+    /^GET/ && do {
+	
+	$LOGLINE = $data[0]." ".$data[1];
+	#Temporary created route
+        my($testing_path) = $baseaddress . $data[1];
+	chomp($testing_path);
+	#Check if root folder
+	if( $data[1] eq "/")
+	{
+	    $get_file=&GetFolderIndex($data[1]);
+	    if( $get_file =~ m/\.cgi/  and $Enable_Cgi eq "1" )
+	    {
+		$readorexecute = 1;
+	    }
+	}
+	#Check for directory
+	elsif( -d $testing_path )
+	{
+	    $get_file = &GetFolderIndex($data[1]);
+            if( $get_file =~ m/\.cgi/  and $Enable_Cgi eq "1" )
+            {
+                $readorexecute = 1;
+            }
+	}
+	#Check for executable
+        elsif( $data[1] =~ m/\.cgi/ and ($Enable_Cgi eq "1") )
+        {
+	    #Check for GET paramaters
+            my(@parsed_get) = split(/\?/, $data[1]);
+            my($filename) = $parsed_get[0];
+            $get_params = $parsed_get[1];
+            #Set environment variables
+            $ENV{"REQUEST_METHOD"} = 'GET';
+            $ENV{'QUERY_STRING'} = $get_params;
+            #Execute script
+            $get_file = $baseaddress . $filename;
+            $readorexecute = 1;
+        }
+        else
+        {
+	    #If not Directory/Executable it's a sample html or txt
+            $get_file = $baseaddress . $data[1];
+        }
+    };
+    #POST method for CGI
+    /^POST/ && do {
+	if($Enable_Cgi eq "1")
+	{
+            $get_file = $baseaddress . $data[1];
+            $ENV{"REQUEST_METHOD"} = 'POST';
+            $readorexecute = 2;
+	}
+        else
+        {
+            #If not Directory/Executable it's a sample html or txt
+            $get_file = $baseaddress . $data[1];
+        }
+    };
+    #Set the Content-Length
+    /^Content-Length:/ && do {
+        $ENV{"CONTENT_LENGTH"}=$data[1];
+    };
+    #End of HEADER section
+    /^\r?$/ && do {
+	#Remove \n etc from file route
+        chomp($get_file);
+        #Execute POST CGI
+        if( $readorexecute == 2)
+        {
+	    #Read (Content_Length) DATA from <STDIN>
+	    my($params);
+	    read(STDIN, $params, $ENV{'CONTENT_LENGTH'});
+	    #Execute Script passing parameters
+	    &FileExecuter($get_file,$params);
+	    last;
+        }
+	#Execute GET CGI
+        elsif( $readorexecute == 1){
+            &FileExecuter($get_file,"");
+            last;
+        }		
+	#Read file
+        else{
+            &FileReader($get_file);
+            last;
+        }
+    };
+}
+\end{lstlisting}
+
+\paragraph{Funkciók}
+\subparagraph{HTTP\_HEAD} Ha a lekérdezés létező fájlra vonatkozik, akkor felépítjük a válasz HEADER részét.
+\begin{lstlisting}
+sub HTTP_HEAD{
+my ($path) = @_;
+if( -e $path )
+{
+    #HTTP_OK
+    &HTTP_HEAD_OK;
+    #HTTP_SERVER_HEAD
+    &HTTP_SERVER_H;
+    #Content-type:
+    &HTTP_CONTENT_T($path);
+    #Header end
+    print("\r\n");
+}
+else{
+    &HTTP_ERROR_404($path);
+}
+
+}
+\end{lstlisting}
+
+\subparagraph{FileExecuter} CGI script esetén ez a függvény felel a szkript lefuttatásáért.
+\begin{lstlisting}
+sub FileExecuter{
+    my ($path,$params) = @_;
+    if( -e $path )                                                                             
+    {   
+	#HTTP 200
+        &HTTP_HEAD_OK;
+	#
+        #Fork and Exec with I/O pipe
+        $pid=open3(\*CHILD_IN,\*CHILD_OUT,\*CHILD_ERR,"$path");
+	#On POST copy data to CHILD_STDIN
+        if( $readorexecute > "1" )
+	{
+	     print CHILD_IN "$params";
+	}
+	close(CHILD_IN);
+	#Forward the CGIs output
+        while(<CHILD_OUT>)                                                                     
+        {   
+            print($_);                                                                         
+        }
+        waitpid($pid, 0);
+        close(CHILD_OUT);                                                                      
+        close(CHILD_ERR);
+	close(STDIN);
+	&safe_exit;                                                                                 
+    }
+    else                                                                                       
+    {   
+        &HTTP_ERROR_404($path);                                                                        
+    } 
+}
+\end{lstlisting}
+
+\subparagraph{FileReader} Hagyományos html/text vagy egyéb bináris esetén ez a funkció másolja ki a fájlt a standard outputra.
+\begin{lstlisting}
+sub FileReader{
+    my ($path) = @_;
+    my ($exist) = 1;
+    open(FILE, $path) or $exist = 0;
+    if( $exist > 0)
+    {
+        #HTTP_OK
+        &HTTP_HEAD_OK;
+	#HTTP_SERVER_HEAD
+	&HTTP_SERVER_H;
+        #Content-type:
+        &HTTP_CONTENT_T($path);
+        #Header end
+        print("\r\n");
+        #Copy function to push data on stdout
+        copy($path,\*STDOUT);
+        close(FILE);
+    }
+    else
+    {
+        &HTTP_ERROR_404($path);
+    }
+    &safe_exit;
+}
+\end{lstlisting}
+
+\subparagraph{HTTP\_HEAD\_OK} A fejrész első sora pozitiív választ ad lekérdezésre.
+\begin{lstlisting}
+sub HTTP_HEAD_OK{
+    print("HTTP/1.1 200 OK\n");
+    &HTTP_SERVER_H;
+}
+\end{lstlisting}
+
+\subparagraph{HTTP\_SERVER\_H} Szerver specifikus fejrészek: verzió, dátum.
+\begin{lstlisting}
+sub HTTP_SERVER_H{
+    print("Date: ");
+    system("date");
+    print("Server: Perl Test Server (TFDAZ6)\r\n");
+}
+\end{lstlisting}
+
+\subparagraph{HTTP\_CONTENT\_T} Ez a függvény felelős a fájlok típusának meghatározására.
+\begin{lstlisting}
+sub HTTP_CONTENT_T{
+    my ($get_file)=@_;
+    print("Content-type: ");
+    system("/usr/bin/file -bi $get_file");
+}
+\end{lstlisting}
+
+\subparagraph{LoadSettings} Ez a funkció értelmezi a paraméterként kapott konfigurációs állományt.
+\begin{lstlisting}
+sub LoadSettings{
+    my($cfgfile) = @_;
+    open(SETTINGS, "<$cfgfile");
+    my (%settings);
+    while(<SETTINGS>)
+    {
+        /^\#/ && do { next;};
+        /^[a-zA-Z]/ && do {
+            my(@parsed) = split(/ /,$_);
+            $settings{$parsed[0]}=$parsed[1];
+        };
+    }
+    close(SETTINGS);
+    return %settings;
+}
+\end{lstlisting}
+
+\subparagraph{GetFolderIndex} Megkeresi a mappához tartozó index állományt. Ehhez a konfigurációban megadott neveket használja fel.
+\begin{lstlisting}
+sub GetFolderIndex{
+    my($path)=@_;
+    my($indexed) = "";
+    #Check for the / at the end of the path
+    if( $path =~ m/\/$/ )
+    {
+	$indexed = $baseaddress.$path;
+    }
+    else
+    {
+	$indexed = $baseaddress.$path."/";
+    }
+    chomp($indexed);
+    foreach(@Index_Files)
+    {
+        my($temp) = $_;
+	chomp($temp);
+	if( -f $indexed.$temp)
+	{
+	    return $indexed.$temp;
+	}
+    }
+    &HTTP_ERROR_404;
+}
+\end{lstlisting}
+
+\subparagraph{HTTP\_ERROR\_404} Hiba esetén a 404-es errort lekezelő függvény.
+\begin{lstlisting}
+sub HTTP_ERROR_404{
+    my( $path) = @_;
+    &ErrorLog("404 Not Found");
+    my ($exist) = 1;
+    my ($path) = $baseaddress . "/" . $Default_Error_Page;
+    chomp($path);
+    open(FILE, $path) or $exist = 0;
+    if( $exist > 0)
+    {
+	&HTTP_ERR_HEAD;
+	&HTTP_CONTENT_T($path);
+	print("\r\n");
+
+	copy($path,\*STDOUT);
+	close(FILE);
+    }
+    else
+    {
+	&HTTP_ERR_HEAD;
+        &HTTP_ERR_BODY;
+    }
+    &safe_exit;
+}
+sub HTTP_ERR_HEAD{
+    print("HTTP/1.1 404 FILE NOT FOUND\r\n");
+    &HTTP_SERVER_H;
+}
+sub HTTP_ERR_BODY{
+    print("Content-type: text/plain; charset=UTF-8\r\n");
+    print("\r\n");                                                                             
+    print("A kert lap nem jelenitheto meg... \n");                                             
+    print("\r\n"); 
+}
+\end{lstlisting}
+
+\subparagraph{ErrorLog} Ez a funkció írja szükséges esetben a logfájlt.
+\begin{lstlisting}
+sub ErrorLog()
+{
+    my($msg)=@_;
+    $date = `date`;
+    chomp($date);
+    chomp($LOGLINE);
+    print ERROR_LOG "[$date] ERROR: $msg | $LOGLINE\n";
+}
+\end{lstlisting}
+
+\subparagraph{safe\_exit} Kilépés esetén a lefoglalt erőforrásokat felszabadítja.
+\begin{lstlisting}
+sub safe_exit{
+    close(ERROR_LOG);
+    exit;
+}
+\end{lstlisting}
+
+\section{Tesztelés}
+A tesztelés kézzel generált http kérésekkel történt. A programot elindítva a standard bemenetre manuálisan beírt sorokra a standard kimeneten olvasható a válasz. A tesztelést előre rögzített http kérésekkel (http\_log) gyorsítottam. A különböző funkciók teszteléshez szükséges volt továbbá egy minta környezet kialakítása. Ez a mellékletben a www mappa. Ebben megtalálható mélyebb mappa struktúra, GET és POST műveleteket feldolgozó CGI szkriptek, különböző nevű index fájlok. 
+\section{Használat}
+A használati útmutató a httpserver.perl.man.8 man dokumentumban olvasható.
+\paragraph{Konfigurációs fájl}
+Példa a konfigurációs fájlra:
+\lstinputlisting{httpserver.cfg}
+
+\newpage
+\section{Fájllista}
+\begin{table}[h]
+\centering
+\begin{tabular}{ll}
+\hline
+Fájl neve               & Leírás \\
+\hline
+\noindent
+httpserver.perl & A HTTP parser.\\
+httpserver.cfg & A HTTP parserhez tartozó konfigurációs fájl. \\
+httpstandalone.perl & Hálózati kiszolgáló a HTTP parserhez.\\
+httpserver.perl.man.8 & A programhoz tartozó felhasználói leírás. \\
+www/index.html & Tesztállomány. \\
+www/404.html & Tesztállomány egyedi hibaoldalhoz. \\
+www/img.png & Tesztállomány bináris kérésekhez. \\
+www/post.html & Tesztállomány POST kérés teszteléséhez. \\
+www/post.cgi & Tesztállomány POST kérés teszteléséhez. \\
+www/get.cgi & Tesztállomány GET kérés teszteléséhez. \\
+www/date.cgi & Tesztállomány CGI futtatásának teszteléséhez. \\
+www/public/index.htm & Tesztállomány egyedi index fájl nevekhez. \\
+www/cgi/index.cgi & Tesztállomány index fájlokhoz, CGI futtatással.\\
+\hline
+\end{tabular}
+\end{table}
+
+\newpage
+\tableofcontents
+
+\end{document}
