@@ -291,7 +291,7 @@ sub HTTP_CONTENT_T{
 #Load config file
 sub LoadSettings{
     my($cfgfile) = @_;
-    open(SETTINGS, "<$cfgfile");
+    open(SETTINGS, "<$cfgfile") or die ("Wrong path for configuration file: $cfgfile\n");
     my (%settings);
     while(<SETTINGS>)
     {
